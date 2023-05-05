@@ -573,10 +573,11 @@ def main():
 
         # Running inference.
         print("Running inference ...")
-        start = time.perf_counter()
-        outs = sess.run(inputs)
-        end = time.perf_counter()
-        print("  took ", end - start, " seconds.\n")
+        for _ in range(10):
+            start = time.perf_counter()
+            outs = sess.run(inputs)
+            end = time.perf_counter()
+            print("  took ", end - start, " seconds.")
 
         # Print the output if required.
         if (args.print_output):
