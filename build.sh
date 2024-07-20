@@ -5,7 +5,8 @@ if [ ! -d llvm-project/build ]; then
     mkdir -p llvm-project/build
     cd llvm-project/build
     cmake -G Ninja ../llvm \
-       -DLLVM_ENABLE_PROJECTS=mlir \
+       -DLLVM_ENABLE_PROJECTS="clang;mlir" \
+       -DLLVM_ENABLE_RUNTIMES="openmp" \
        -DLLVM_TARGETS_TO_BUILD="host" \
        -DCMAKE_BUILD_TYPE=Release \
        -DLLVM_ENABLE_ASSERTIONS=ON \
@@ -18,8 +19,14 @@ if [ ! -d llvm-project/build ]; then
 fi
 
 export pythonLocation=$(which python3)
-if [ ! -d env ]; then python3 -m venv env; fi
-source env/bin/activate
+if [ ! -d env ]; then
+    python3 -m venv env
+    source env/bin/activate
+    pip install -U pip onnx
+    pip install -r requirements.txt
+else
+    source env/bin/activate
+fi
 
 PROTOBUF_VERSION=21.12
 if [ ! -d protobuf ]; then

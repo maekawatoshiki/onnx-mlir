@@ -16,7 +16,7 @@ def run_inference(model_path):
     input = np.zeros(shape=input_dims, dtype=np.dtype(np.float32))
 
     timings = []
-    for _ in range(10):
+    for _ in range(100):
         start_time = time.time()
         _ = session.run([input])
         timings.append(time.time() - start_time)
