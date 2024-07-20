@@ -40,6 +40,7 @@ CMakePresets.json
 
 # Nested build directory
 /build*
+!build.sh
 
 # The following .gitignore content is taken from
 # https://github.com/github/gitignore/blob/main/Python.gitignore
