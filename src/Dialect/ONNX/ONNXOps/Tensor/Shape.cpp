@@ -52,6 +52,9 @@ LogicalResult ONNXShapeOpShapeHelper::computeShape() {
   Value data = operandAdaptor.getData();
 
   // Compute and store start/end in ONNXShapeOpShapeHelper object.
+  if (!hasShapeAndRank(data)) {
+    return failure();
+  }
   int64_t rank = createIE->getShapedTypeRank(data);
   start = shapeOp.getStart();
   start = normalizeClampedPerSpec(start, rank);
@@ -61,7 +64,7 @@ LogicalResult ONNXShapeOpShapeHelper::computeShape() {
     return op->emitError("Start must not be greater than end");
 
   // Output shape is a 1D vector with "end-start" values
-  DimsExpr outputDims(1, LiteralIndexExpr(end - start));
+  DimsExpr outputDims(1, LitIE(end - start));
   setOutputDims(outputDims);
   return success();
 }

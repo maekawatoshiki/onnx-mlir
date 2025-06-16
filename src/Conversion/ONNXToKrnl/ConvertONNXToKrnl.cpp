@@ -12,6 +12,7 @@
 // Krnl IR and standard operations.
 //
 //===----------------------------------------------------------------------===//
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
@@ -46,7 +47,8 @@ public:
         ONNXEntryPointOp::getEntryPointFuncAttrName());
     StringRef entryPointName = funcRefAttr.getLeafReference().getValue();
     Operation *entryPointOp = module.lookupSymbol(entryPointName);
-    func::FuncOp entryPointFunc = cast<func::FuncOp>(entryPointOp);
+    assert(entryPointOp && "entry point name not found!");
+    func::FuncOp entryPointFunc = mlir::cast<func::FuncOp>(entryPointOp);
 
     IntegerAttr numInputsAttr =
         rewriter.getI32IntegerAttr(entryPointFunc.getArgumentTypes().size());
@@ -189,7 +191,7 @@ std::map<std::string, std::string> ONNXEntryPointLowering::typeMap = {
 void populateONNXToKrnlConversionPattern(RewritePatternSet &patterns,
     TypeConverter &typeConverter, MLIRContext *ctx, DimAnalysis *dimAnalysis,
     bool enableTiling, bool enableSIMD, bool enableParallel,
-    std::string opsForCall) {
+    bool enableFastMath, std::string opsForCall) {
   // clang-format off
   // Type conversion for function signatures.
   // Call MLIR FuncOp signature conversion when result type is a ranked tensor.
@@ -202,28 +204,33 @@ void populateONNXToKrnlConversionPattern(RewritePatternSet &patterns,
   populateLoweringONNXIfOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXLoopOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXScanOpPattern(patterns, typeConverter, ctx);
+  populateLoweringONNXYieldOpPattern(patterns, typeConverter, ctx);
   // Math
   populateLoweringONNXCumSumOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXDFTOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXElementwiseOpPattern(patterns, typeConverter, ctx, dimAnalysis, enableSIMD, enableParallel);
   populateLoweringONNXGemmOpPattern(patterns, typeConverter, ctx, enableTiling, enableSIMD, enableParallel);
   populateLoweringONNXHardmaxOpPattern(patterns, typeConverter, ctx);
+  populateLoweringONNXHammingWindowOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXReductionOpPattern(patterns, typeConverter, ctx, enableSIMD, enableParallel);
   populateLoweringONNXSoftmaxOpPattern(patterns, typeConverter, ctx, enableParallel);
   populateLoweringONNXTopKOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXTriluOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXMatMulOpPattern(patterns, typeConverter, ctx, dimAnalysis, enableTiling, enableSIMD, enableParallel);
   populateLoweringONNXMatMulIntegerOpPattern(patterns, typeConverter, ctx);
+  populateLoweringONNXMeanVarianceNormalizationOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXRandomNormalOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXRandomNormalLikeOpPattern(patterns, typeConverter, ctx);
+  populateLoweringONNXLpNormalizationOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXLRNOpPattern(patterns, typeConverter, ctx);
+  populateLoweringONNXQLinearMatMulOpPattern(patterns, typeConverter, ctx);
   // ML
   populateLoweringONNXCategoryMapperOpPattern(patterns, typeConverter, ctx);
   // ObjectDetection
   populateLoweringONNXNonMaxSuppressionOpPattern(patterns, typeConverter, ctx);
   // Quantization
-  populateLoweringONNXDynamicQuantizeLinearOpPattern(patterns, typeConverter, ctx);
-  populateLoweringONNXQuantizeLinearOpPattern(patterns, typeConverter, ctx);
+  populateLoweringONNXDynamicQuantizeLinearOpPattern(patterns, typeConverter, ctx, enableSIMD, enableParallel, enableFastMath);
+  populateLoweringONNXQuantizeLinearOpPattern(patterns, typeConverter, ctx, enableSIMD, enableParallel, enableFastMath);
   // Tensor
   populateLoweringONNXArgMinMaxOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXDimOpPattern(patterns, typeConverter, ctx);
@@ -307,12 +314,13 @@ struct FrontendToKrnlLoweringPass
   FrontendToKrnlLoweringPass(const FrontendToKrnlLoweringPass &pass)
       : PassWrapper<FrontendToKrnlLoweringPass, OperationPass<ModuleOp>>() {}
   FrontendToKrnlLoweringPass(bool enableTiling, bool enableSIMD,
-      bool enableParallel, std::string opsForCall) {
+      bool enableParallel, bool enableFastMath, std::string opsForCall) {
     // Below, need explicit assignment to enable implicit conversion of bool to
     // Option<bool>.
     this->enableTiling = enableTiling;
     this->enableSIMD = enableSIMD;
     this->enableParallel = enableParallel;
+    this->enableFastMath = enableFastMath;
     this->opsForCall = opsForCall;
   }
 
@@ -341,6 +349,8 @@ public:
       llvm::cl::desc("Enable SIMD code gen"), llvm::cl::init(false)};
   Option<bool> enableParallel{*this, "enable-parallel",
       llvm::cl::desc("Enable parallelization"), llvm::cl::init(false)};
+  Option<bool> enableFastMath{*this, "enable-fast-math",
+      llvm::cl::desc("Enable fast math optimizations"), llvm::cl::init(false)};
   Option<std::string> opsForCall{*this, "ops-for-call",
       llvm::cl::desc("Specify ops to be lowered to krnl.call"),
       llvm::cl::init("")};
@@ -362,7 +372,7 @@ void FrontendToKrnlLoweringPass::runOnOperation() {
   target.addLegalDialect<KrnlDialect, affine::AffineDialect,
       arith::ArithDialect, func::FuncDialect, linalg::LinalgDialect,
       math::MathDialect, vector::VectorDialect, memref::MemRefDialect,
-      shape::ShapeDialect, scf::SCFDialect>();
+      shape::ShapeDialect, scf::SCFDialect, cf::ControlFlowDialect>();
   // Needed to support unsigned int computations. To be removed if we use a
   // scheme that does not rely on the UnrealizedConversionCastOp.
   target.addLegalOp<::mlir::UnrealizedConversionCastOp>();
@@ -370,20 +380,6 @@ void FrontendToKrnlLoweringPass::runOnOperation() {
   // lowering. ONNXNoneOp will be dangling and removed by calling
   // canonicalization after the lowering.
   target.addLegalOp<::mlir::ONNXNoneOp>();
-
-  // Use krnl.load/store instead of std.load/store and affine.load/store.
-  // krnl.load/store will be lowered to std.load/store and affine.load/store
-  // by `convert-krnl-to-affine` pass.
-  target.addIllegalOp<mlir::memref::LoadOp>();
-  target.addIllegalOp<mlir::affine::AffineLoadOp>();
-  target.addIllegalOp<mlir::memref::StoreOp>();
-  // Memref builder can use affine stores, it would be awkward for it to
-  // generate Krnl stores as mem builder is part of MLIR. Thus the affine
-  // stores should not be illegal here. Since affine loads are still illegal,
-  // the regular krnl lowering will most likely trigger errors if non krnl mem
-  // ops where generally used.
-  //
-  // target.addIllegalOp<mlir::affine::AffineStoreOp>();
 
   // Option`emitDealloc` is deprecated and turned off, make sure we don't have
   // buffer deallocation at this level. Will use MLIR buffer-deallocation for
@@ -442,7 +438,7 @@ void FrontendToKrnlLoweringPass::runOnOperation() {
   // Define patterns.
   populateONNXToKrnlConversionPattern(patterns, krnlTypeConverter,
       &getContext(), dimAnalysis, enableTiling, enableSIMD, enableParallel,
-      opsForCall);
+      enableFastMath, opsForCall);
 
   // Rewrite patterns for accelerators.
   for (auto *accel : onnx_mlir::accel::Accelerator::getAccelerators())
@@ -462,9 +458,9 @@ std::unique_ptr<Pass> createLowerToKrnlPass() {
 }
 
 std::unique_ptr<Pass> createLowerToKrnlPass(bool enableTiling, bool enableSIMD,
-    bool enableParallel, std::string opsForCall) {
+    bool enableParallel, bool enableFastMath, std::string opsForCall) {
   return std::make_unique<FrontendToKrnlLoweringPass>(
-      enableTiling, enableSIMD, enableParallel, opsForCall);
+      enableTiling, enableSIMD, enableParallel, enableFastMath, opsForCall);
 }
 
 //===----------------------------------------------------------------------===//
@@ -490,12 +486,9 @@ void configureOnnxToKrnlLoweringPass(bool reportOnParallel,
   if (reportOnSimd) {
     if (!simdIsEnabled) {
       OnnxToKrnlLoweringConfiguration::defaultSimdComment = "simd is disabled";
-    } else {
-      VectorMachineSupport *vms =
-          VectorMachineSupport::getGlobalVectorMachineSupport();
-      if (!vms->hasSimd())
-        OnnxToKrnlLoweringConfiguration::defaultSimdComment =
-            "cpu with unspecified simd ISA";
+    } else if (!VectorMachineSupport::hasSimd()) {
+      OnnxToKrnlLoweringConfiguration::defaultSimdComment =
+          "cpu with unspecified simd ISA";
     }
   }
   if (parallelIsEnabled)

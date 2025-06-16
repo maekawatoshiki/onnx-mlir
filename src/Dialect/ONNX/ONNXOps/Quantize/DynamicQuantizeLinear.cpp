@@ -4,7 +4,7 @@
 
 //===------------------ DynamicQuantizeLinear.cpp - ONNX Operations -------===//
 //
-// Copyright 2019-2022 The IBM Research Authors.
+// Copyright 2019-2024 The IBM Research Authors.
 //
 // =============================================================================
 //
@@ -61,7 +61,7 @@ LogicalResult ONNXDynamicQuantizeLinearOp::inferShapes(
 
   IntegerType ui8Type =
       IntegerType::get(getContext(), 8, IntegerType::Unsigned);
-  FloatType f32Type = FloatType::getF32(getContext());
+  FloatType f32Type = Float32Type::get(getContext());
 
   ONNXDynamicQuantizeLinearOpShapeHelper shapeHelper(getOperation(), {});
   return shapeHelper.computeShapeAndUpdateTypes(

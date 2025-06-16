@@ -110,51 +110,52 @@ static void suppressByScores(ConversionPatternRewriter &rewriter, Location loc,
   Value zero = create.math.constantIndex(0);
   Value one = create.math.constantIndex(1);
   // Store the number of scores whose value is greater than the threshold.
+  // Scalar, ok to use alloca.
   Value topk = create.mem.alloca(MemRefType::get({}, indexType));
 
   // Compute the effective max output per class.
   Value effectiveMaxPerClass =
       create.mem.alloca(MemRefType::get({}, indexType));
-  create.krnl.store(zero, effectiveMaxPerClass, {});
+  create.krnl.store(zero, effectiveMaxPerClass);
 
   ValueRange bcLoopDef = create.krnl.defineLoops(2);
   create.krnl.iterate(bcLoopDef, bcLoopDef, {zero, zero}, {bs, cs},
-      [&](KrnlBuilder &createKrnl, ValueRange bcLoopInd) {
+      [&](const KrnlBuilder &createKrnl, ValueRange bcLoopInd) {
         MultiDialectBuilder<KrnlBuilder, MathBuilder, MemRefBuilder> create(
             createKrnl);
         Value b(bcLoopInd[0]), c(bcLoopInd[1]);
 
         // Reset the number of scores whose value is greater than the
         // threshold. Counting is done per class.
-        create.krnl.store(zero, topk, {});
+        create.krnl.store(zero, topk);
 
         // Count the number of scores whose value is greater than the
         // threshold. Counting is done per class.
         ValueRange sLoopDef = create.krnl.defineLoops(1);
         create.krnl.iterate(sLoopDef, sLoopDef, {zero}, {ss},
-            [&](KrnlBuilder &createKrnl, ValueRange sLoopInd) {
+            [&](const KrnlBuilder &createKrnl, ValueRange sLoopInd) {
               Value s(sLoopInd[0]);
               MathBuilder createMath(createKrnl);
 
               Value score = createKrnl.load(scores, {b, c, s});
               // Increase the counter if score > threshold.
               Value gt = createMath.sgt(score, scoreThreshold);
-              Value topkVal = createKrnl.load(topk, {});
+              Value topkVal = createKrnl.load(topk);
               Value topkPlusOneVal = createMath.add(topkVal, one);
               topkVal = createMath.select(gt, topkPlusOneVal, topkVal);
-              createKrnl.store(topkVal, topk, {});
+              createKrnl.store(topkVal, topk);
             });
 
         // Update the effective max output per class.
-        Value x = create.krnl.load(topk, {});
-        Value y = create.krnl.load(effectiveMaxPerClass, {});
-        create.krnl.store(create.math.max(x, y), effectiveMaxPerClass, {});
+        Value x = create.krnl.load(topk);
+        Value y = create.krnl.load(effectiveMaxPerClass);
+        create.krnl.store(create.math.max(x, y), effectiveMaxPerClass);
       });
 
   // Suppress the number of output bounding boxes per class.
-  Value x = create.krnl.load(maxOutputPerClass, {});
-  Value y = create.krnl.load(effectiveMaxPerClass, {});
-  create.krnl.store(create.math.min(x, y), maxOutputPerClass, {});
+  Value x = create.krnl.load(maxOutputPerClass);
+  Value y = create.krnl.load(effectiveMaxPerClass);
+  create.krnl.store(create.math.min(x, y), maxOutputPerClass);
 }
 
 /// Bounding boxes may contain a mix of flipped and non-flipped boxes. Try to
@@ -175,7 +176,7 @@ static Value tryToUnflip(
 
   ValueRange loopDef = create.krnl.defineLoops(2);
   create.krnl.iterateIE(loopDef, loopDef, {zeroIE, zeroIE}, {bs, ss},
-      [&](KrnlBuilder &createKrnl, ValueRange loopInd) {
+      [&](const KrnlBuilder &createKrnl, ValueRange loopInd) {
         MathBuilder createMath(createKrnl);
         DimIndexExpr b(loopInd[0]), s(loopInd[1]);
         // Load a bounding box.
@@ -272,13 +273,14 @@ struct ONNXNonMaxSuppressionOpLowering
 
     // Refine the number of output boxes per class by suppressing it using
     // spatial dimension size and score threshold.
+    // Scalar, ok to use alloca.
     Value maxOutputPerClass = create.mem.alloca(MemRefType::get({}, indexType));
     // 1. Suppress by using spatial dimension size.
     Value x = create.math.castToIndex(maxOutputBoxPerClass);
-    create.krnl.store(create.math.min(x, ss), maxOutputPerClass, {});
+    create.krnl.store(create.math.min(x, ss), maxOutputPerClass);
     // 2. Suppress by score threshold.
     suppressByScores(rewriter, loc, scores, scoreTH, maxOutputPerClass);
-    Value MOPC = create.krnl.load(maxOutputPerClass, {});
+    Value MOPC = create.krnl.load(maxOutputPerClass);
 
     // Sort scores in the descending order.
     Value order = emitArgSort(rewriter, loc, scores, /*axis=*/2,
@@ -290,14 +292,13 @@ struct ONNXNonMaxSuppressionOpLowering
       boxes = tryToUnflip(rewriter, loc, boxes);
 
     // The total number of output selected indices.
-    IndexExpr numSelectedIndicesIE = bsIE * csIE * DimIndexExpr(MOPC);
+    IndexExpr numSelectedIndicesIE = bsIE * csIE * DimIE(MOPC);
 
     // Allocate a MemRef for the output. This MemRef is NOT the final output
     // since the number of selected indices has yet not suppressed by IOU. So
     // the first dimension size is larger than necessary.
     // Output shape : [num_selected_indices, 3]
-    SmallVector<IndexExpr, 2> outputDims = {
-        numSelectedIndicesIE, LiteralIndexExpr(3)};
+    SmallVector<IndexExpr, 2> outputDims = {numSelectedIndicesIE, LitIE(3)};
     SmallVector<int64_t, 2> outputShape;
     if (numSelectedIndicesIE.isLiteral())
       outputShape.emplace_back(numSelectedIndicesIE.getLiteral());
@@ -313,9 +314,10 @@ struct ONNXNonMaxSuppressionOpLowering
     // dim of the output, which is suppressed by IOU during computation and
     // cannot be computed in advance.
     // Final output shape : [effective_num_selected_indices, 3]
+    // Scalar, ok to use alloca.
     Value effectiveNumSelectedIndices =
         create.mem.alloca(MemRefType::get({}, indexType));
-    create.krnl.store(zero, effectiveNumSelectedIndices, {});
+    create.krnl.store(zero, effectiveNumSelectedIndices);
 
     // Suppress by using IOU.
     // Iterate over all bounding boxes in the descending order of scores.
@@ -323,11 +325,11 @@ struct ONNXNonMaxSuppressionOpLowering
         create.mem.alloca(MemRefType::get({}, indexType));
     ValueRange bcLoopDef = create.krnl.defineLoops(2);
     create.krnl.iterate(bcLoopDef, bcLoopDef, {zero, zero}, {bs, cs},
-        [&](KrnlBuilder &createKrnl, ValueRange bcLoopInd) {
+        [&](const KrnlBuilder &createKrnl, ValueRange bcLoopInd) {
           MultiDialectBuilder<KrnlBuilder, MathBuilder, MemRefBuilder> create(
               createKrnl);
           // Keep trace of the number of output boxes per class.
-          create.krnl.store(zero, effectiveMaxOutputPerClass, {});
+          create.krnl.store(zero, effectiveMaxOutputPerClass);
           // Keep trace of removed indices per class.
           DimIndexExpr ssIE(ss);
           SmallVector<IndexExpr, 1> dims = {ssIE};
@@ -341,7 +343,7 @@ struct ONNXNonMaxSuppressionOpLowering
           // Iterate in the descending order of scores.
           ValueRange sLoopDef = create.krnl.defineLoops(1);
           create.krnl.iterate(sLoopDef, sLoopDef, {zero}, {ss},
-              [&](KrnlBuilder &createKrnl, ValueRange sLoopInd) {
+              [&](const KrnlBuilder &createKrnl, ValueRange sLoopInd) {
                 Value b(bcLoopInd[0]), c(bcLoopInd[1]), s(sLoopInd[0]);
                 MultiDialectBuilder<KrnlBuilder, MathBuilder> create(
                     createKrnl);
@@ -355,7 +357,7 @@ struct ONNXNonMaxSuppressionOpLowering
                 Value checkScore = create.math.sgt(score, scoreTH);
                 // 2. Have not yet got enough outputs.
                 Value currentMOPC =
-                    create.krnl.load(effectiveMaxOutputPerClass, {});
+                    create.krnl.load(effectiveMaxOutputPerClass);
                 Value checkMOPC = create.math.slt(currentMOPC, MOPC);
                 // 3. Bounding box has not yet been removed.
                 Value isRemoved =
@@ -381,7 +383,7 @@ struct ONNXNonMaxSuppressionOpLowering
                 // Store the index of the selected box to the output.
                 // out_index = effective_num_selected_indices
                 // selected_indices[out_index] = [b, c, selected_box_index]
-                Value soVal = create.krnl.load(effectiveNumSelectedIndices, {});
+                Value soVal = create.krnl.load(effectiveNumSelectedIndices);
                 create.krnl.store(b, selectedMemRef, {soVal, zero});
                 create.krnl.store(c, selectedMemRef, {soVal, one});
                 create.krnl.store(selectedBI, selectedMemRef, {soVal, two});
@@ -400,7 +402,7 @@ struct ONNXNonMaxSuppressionOpLowering
                 // using IOU.
                 ValueRange oLoopDef = create.krnl.defineLoops(1);
                 create.krnl.iterate(oLoopDef, oLoopDef, {zero}, {ss},
-                    [&](KrnlBuilder &createKrnl, ValueRange oLoopInd) {
+                    [&](const KrnlBuilder &createKrnl, ValueRange oLoopInd) {
                       Value o(oLoopInd[0]);
                       MathBuilder createMath(createKrnl);
 
@@ -438,9 +440,8 @@ struct ONNXNonMaxSuppressionOpLowering
         });
 
     // Insert allocation and deallocation for the final output.
-    Value effectiveNSI = create.krnl.load(effectiveNumSelectedIndices, {});
-    SmallVector<IndexExpr, 2> resDims = {
-        DimIndexExpr(effectiveNSI), LiteralIndexExpr(3)};
+    Value effectiveNSI = create.krnl.load(effectiveNumSelectedIndices);
+    SmallVector<IndexExpr, 2> resDims = {DimIE(effectiveNSI), LitIE(3)};
     Value resMemRef = create.mem.alignedAlloc(
         MemRefType::get({ShapedType::kDynamic, 3}, elementType), resDims);
 
@@ -448,7 +449,7 @@ struct ONNXNonMaxSuppressionOpLowering
     ValueRange resLoopDef = create.krnl.defineLoops(2);
     create.krnl.iterate(resLoopDef, resLoopDef, {zero, zero},
         {effectiveNSI, three},
-        [&](KrnlBuilder &createKrnl, ValueRange resLoopInd) {
+        [&](const KrnlBuilder &createKrnl, ValueRange resLoopInd) {
           MathBuilder createMath(createKrnl);
           Value load = createKrnl.load(selectedMemRef, resLoopInd);
           Value res = createMath.cast(elementType, load);

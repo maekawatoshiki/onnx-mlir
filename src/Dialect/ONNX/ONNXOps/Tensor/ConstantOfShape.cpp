@@ -70,6 +70,10 @@ LogicalResult ONNXConstantOfShapeOp::verify() {
   if (auto constantOp = getONNXConstantOp(input)) {
     ElementsAttr valueAttribute =
         mlir::cast<ElementsAttr>(constantOp.getValueAttr());
+    if (isElementAttrUninitializedDenseResource(valueAttribute)) {
+      return success(); // Return success to allow the parsing of MLIR with
+                        // elided attributes
+    }
     // Get repeat values from valueAttribute.
     auto valueIt = valueAttribute.getValues<IntegerAttr>().begin();
     for (int i = 0; i < inputShape[0]; ++i) {
@@ -93,9 +97,9 @@ LogicalResult ONNXConstantOfShapeOp::verify() {
 std::vector<Type> ONNXConstantOfShapeOp::resultTypeInference() {
   Type elementType;
   if (auto attr = getValueAttr()) {
-    elementType = cast<ElementsAttr>(attr).getElementType();
+    elementType = mlir::cast<ElementsAttr>(attr).getElementType();
   } else {
-    elementType = FloatType::getF32(getContext());
+    elementType = Float32Type::get(getContext());
   }
   return {UnrankedTensorType::get(elementType)};
 }
@@ -106,7 +110,7 @@ std::vector<Type> ONNXConstantOfShapeOp::resultTypeInference() {
 
 LogicalResult ONNXConstantOfShapeOp::inferShapes(
     std::function<void(Region &)> doShapeInference) {
-  ShapedType inputType = cast<ShapedType>(getInput().getType());
+  ShapedType inputType = mlir::cast<ShapedType>(getInput().getType());
   if (!inputType.hasStaticShape())
     return success();
 
@@ -121,7 +125,7 @@ LogicalResult ONNXConstantOfShapeOp::inferShapes(
   } else {
     // If 'value' attribute is not specified, it defaults to a tensor of
     // value 0 and datatype float32.
-    elementType = FloatType::getF32(getContext());
+    elementType = Float32Type::get(getContext());
 
     llvm::SmallVector<int64_t, 2> dims(1, 1);
     auto tensorType = RankedTensorType::get(dims, elementType);

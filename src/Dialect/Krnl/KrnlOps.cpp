@@ -4,7 +4,7 @@
 
 //===---------------------- KrnlOps.cpp - Krnl Operations -----------------===//
 //
-// Copyright 2019-2023 The IBM Research Authors.
+// Copyright 2019-2024 The IBM Research Authors.
 //
 // =============================================================================
 //
@@ -154,12 +154,22 @@ void KrnlCallOp::build(OpBuilder &builder, ::mlir::OperationState &odsState,
   build(builder, odsState, funcNameStr, resultVals, op, operands, copyAttrs);
 }
 
+void KrnlCallOp::build(OpBuilder &builder, ::mlir::OperationState &odsState,
+    std::string funcName, int64_t numOfOutput, ValueRange operands) {
+  build(builder, odsState, {}, funcName, numOfOutput, operands);
+}
+
+void KrnlCallOp::build(OpBuilder &builder, ::mlir::OperationState &odsState,
+    StringAttr funcName, IntegerAttr numOfOutput, ValueRange operands) {
+  build(builder, odsState, {}, funcName, numOfOutput, operands);
+}
+
 void KrnlCallOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
 
   for (size_t i = 0; i < getParameters().size(); i++) {
-    if (i < (size_t)getNumOfOutput())
+    if (i < static_cast<size_t>(getNumOfOutput()))
       effects.emplace_back(MemoryEffects::Write::get(),
           &getParametersMutable()[i], SideEffects::DefaultResource::get());
     else
@@ -596,7 +606,7 @@ ParseResult KrnlIterateOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
-::llvm::SmallVector<mlir::Region *> KrnlIterateOp::getLoopRegions() {
+::llvm::SmallVector<Region *> KrnlIterateOp::getLoopRegions() {
   return {&getBodyRegion()};
 }
 
@@ -646,6 +656,41 @@ void KrnlInstrumentOp::build(mlir::OpBuilder &builder, OperationState &state,
   build(builder, state, opNameAttr, tagAttr, nodeNameAttr);
 }
 
+void KrnlInstrumentOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+
+  // KrnlInstrumentOp writes to output stream
+  effects.emplace_back(
+      MemoryEffects::Write::get(), SideEffects::DefaultResource::get());
+}
+
+//===----------------------------------------------------------------------===//
+// KrnlPrintTensorOp
+//===----------------------------------------------------------------------===//
+
+void KrnlPrintTensorOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+
+  effects.emplace_back(MemoryEffects::Read::get(), &getInputMutable());
+
+  effects.emplace_back(
+      MemoryEffects::Write::get(), SideEffects::DefaultResource::get());
+}
+
+//===----------------------------------------------------------------------===//
+// KrnlPrintOp
+//===----------------------------------------------------------------------===//
+
+void KrnlPrintOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+
+  effects.emplace_back(
+      MemoryEffects::Write::get(), SideEffects::DefaultResource::get());
+}
+
 //===----------------------------------------------------------------------===//
 // KrnlBlockOp
 //===----------------------------------------------------------------------===//
@@ -669,7 +714,8 @@ void KrnlPermuteOp::build(::mlir::OpBuilder &odsBuilder,
   assert(rank >= 2 && "permute needs 2 or more loops");
   assert(odsMap.size() == rank && "loop and size size must be identical");
   for (unsigned int i = 0; i < rank; ++i) {
-    assert(odsMap[i] >= 0 && odsMap[i] < (int64_t)rank && "bad permute");
+    assert(odsMap[i] >= 0 && odsMap[i] < static_cast<int64_t>(rank) &&
+           "bad permute");
     for (unsigned int j = i + 1; j < rank; ++j)
       assert(
           odsMap[i] != odsMap[j] && "map should be a strict permute pattern");

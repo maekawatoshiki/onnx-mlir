@@ -29,14 +29,14 @@ namespace zhigh {
 //===----------------------------------------------------------------------===//
 
 void ZHighF32ToDLF16Op::build(OpBuilder &builder, OperationState &state,
-    Value input, IntegerAttr saturation) {
+    Value input, IntegerAttr noSaturation) {
   Type elementType = builder.getF16Type();
   Type resType = UnrankedTensorType::get(elementType);
 
-  if (auto inType = dyn_cast<RankedTensorType>(input.getType()))
+  if (auto inType = mlir::dyn_cast<RankedTensorType>(input.getType()))
     resType = RankedTensorType::get(inType.getShape(), elementType);
 
-  build(builder, state, resType, input, saturation);
+  build(builder, state, resType, input, noSaturation);
 }
 
 //===----------------------------------------------------------------------===//
@@ -44,7 +44,7 @@ void ZHighF32ToDLF16Op::build(OpBuilder &builder, OperationState &state,
 //===----------------------------------------------------------------------===//
 
 LogicalResult ZHighF32ToDLF16Op::inferShapes(
-    std::function<void(mlir::Region &)> doShapeInference) {
+    std::function<void(Region &)> doShapeInference) {
   return inferShapeForUnaryOps(this->getOperation());
 }
 

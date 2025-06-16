@@ -4,8 +4,8 @@
 
 //====------ ONNXToTOSACommon.hpp - ONNX dialects to TOSA lowering --------===//
 //
-// Copyright 2020 The TensorFlow Authors. All Rights Reserved.
-// Copyright (c) 2022-2023 Advanced Micro Devices, Inc.
+// Copyright 2020-2024 The TensorFlow Authors. All Rights Reserved.
+// Copyright (c) 2022-2024 Advanced Micro Devices, Inc.
 //
 // =============================================================================
 //
@@ -14,11 +14,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#pragma once
+#ifndef ONNX_MLIR_ONNX_TO_TOSA_H
+#define ONNX_MLIR_ONNX_TO_TOSA_H
 
 #include "DialectBuilder.hpp"
 #include "ONNXToTOSALegalizeUtils.hpp"
-#include "mlir/Dialect/Quant/QuantTypes.h"
+#include "mlir/Dialect/Quant/IR/QuantTypes.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 
 #include "mlir/IR/MLIRContext.h"
@@ -124,3 +125,4 @@ void populateLoweringONNXReshapeOpToTOSAPattern(mlir::ConversionTarget &,
 void populateLoweringONNXResizeOpToTOSAPattern(mlir::ConversionTarget &,
     mlir::RewritePatternSet &, mlir::TypeConverter &, mlir::MLIRContext *);
 } // namespace onnx_mlir
+#endif

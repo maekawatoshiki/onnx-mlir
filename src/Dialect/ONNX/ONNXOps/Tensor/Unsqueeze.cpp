@@ -33,6 +33,9 @@ LogicalResult ONNXCommonUnsqueezeOpShapeHelper<OP_TYPE>::customComputeShape(
   typename OP_TYPE::Adaptor operandAdaptor(operands, op->getAttrDictionary());
   DimsExpr outputDims;
   Value data = operandAdaptor.getData();
+  if (!hasShapeAndRank(data)) {
+    return failure();
+  }
   int64_t dataRank = createIE->getShapedTypeRank(data);
 
   // Init state.
@@ -64,7 +67,7 @@ LogicalResult ONNXCommonUnsqueezeOpShapeHelper<OP_TYPE>::customComputeShape(
     if (std::find(unsqueezedAxes.begin(), unsqueezedAxes.end(), i) !=
         unsqueezedAxes.end())
       // found i in unsqueeze axles.
-      outputDims.emplace_back(LiteralIndexExpr(1));
+      outputDims.emplace_back(LitIE(1));
     else
       outputDims.emplace_back(createIE->getShapeAsDim(data, j++));
 

@@ -181,4 +181,3 @@ func.func @test_krnl_tan_lowering(%arg0: memref<10x10xf32>) -> memref<10x10xf32>
 // CHECK: [[ACOS_RES:%.+]] = llvm.call @tanf([[SCALAR_IN]]) : (f32) -> f32
 // CHECK: [[DATA_OUT:%.+]] = llvm.getelementptr {{.*}} : (!llvm.ptr, i64) -> !llvm.ptr, f32
 // CHECK: llvm.store [[ACOS_RES]], [[DATA_OUT]] : f32, !llvm.ptr
-

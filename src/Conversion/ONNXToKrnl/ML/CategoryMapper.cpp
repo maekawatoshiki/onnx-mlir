@@ -140,11 +140,11 @@ struct ONNXCategoryMapperOpLowering
     create.krnlIE.getShapeAsDims(X, ubs);
 
     if (emitPrintStmts)
-      create.krnl.printTensor("Input tensor:\n", X);
+      create.krnl.printTensor("Input tensor:%s%d%e", X);
 
     ValueRange loopDef = create.krnl.defineLoops(rank);
     create.krnl.iterateIE(loopDef, loopDef, lbs, ubs,
-        [&](KrnlBuilder &createKrnl, ValueRange loopInd) {
+        [&](const KrnlBuilder &createKrnl, ValueRange loopInd) {
           // Determine the index of 'inputElem' in the perfect hash table
           // 'pHash'. Note: the index might not be valid (this happens
           // when the 'inputElem' is not present in the perfect hash
@@ -253,7 +253,7 @@ private:
   }
 
   Value loadElement(Value memref, ValueRange loopInd, Type elementType,
-      int64_t rank, KrnlBuilder &createKrnl) const {
+      int64_t rank, const KrnlBuilder &createKrnl) const {
     Value inputElem;
     TypeSwitch<Type>(elementType)
         .Case<IntegerType>(
@@ -281,7 +281,7 @@ private:
             SmallVector<int64_t, 4> strides;
             int64_t alignmentOffset; // not used, just to make the function call
                                      // completed.
-            if (getStridesAndOffset(memRefType, strides, alignmentOffset)
+            if (memRefType.getStridesAndOffset(strides, alignmentOffset)
                     .failed())
               llvm_unreachable("Failed to get strides");
             Value stringMemRef =

@@ -41,7 +41,7 @@ public:
 
   LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands,
       ConversionPatternRewriter &rewriter) const override {
-    auto krnlVectorTypeCastOp = cast<KrnlVectorTypeCastOp>(op);
+    auto krnlVectorTypeCastOp = mlir::cast<KrnlVectorTypeCastOp>(op);
     MemRefType sourceType =
         mlir::cast<MemRefType>(krnlVectorTypeCastOp.getOperand().getType());
     MemRefType targetType = krnlVectorTypeCastOp.getType();
@@ -62,7 +62,7 @@ public:
 
     // Get memRefDescriptor, the new memref descriptor.
     MemRefDescriptor memRefDescriptor =
-        MemRefDescriptor::undef(rewriter, loc, targetStructType);
+        MemRefDescriptor::poison(rewriter, loc, targetStructType);
     auto targetElementPtrType = memRefDescriptor.getElementPtrType();
 
     // Set the new memref to the same buffer as the source memref.
@@ -78,7 +78,7 @@ public:
 
     int64_t offset;
     SmallVector<int64_t, 4> strides;
-    if (failed(getStridesAndOffset(targetType, strides, offset)))
+    if (failed(targetType.getStridesAndOffset(strides, offset)))
       return failure();
 
     // Unhandled dynamic offset.

@@ -4,7 +4,7 @@
 
 //===------------------ Conv.cpp - ONNX Operations ------------------------===//
 //
-// Copyright 2019-2023 The IBM Research Authors.
+// Copyright 2019-2024 The IBM Research Authors.
 //
 // =============================================================================
 //
@@ -370,10 +370,13 @@ LogicalResult ONNXConvTransposeOpShapeHelper::computeShape() {
   int64_t groupNum = convTransposeOp.getGroup();
   llvm::StringRef autoPad = convTransposeOp.getAutoPad();
 
-  Value xValue = (Value)operandAdaptor.getX();
+  Value xValue = static_cast<Value>(operandAdaptor.getX());
   Value wValue = operandAdaptor.getW();
 
   // Basic information.
+  if (!hasShapeAndRank(xValue)) {
+    return failure();
+  }
   int64_t rank = createIE->getShapedTypeRank(xValue);
   int64_t spatialOffset = 2;
   int64_t spatialRank = rank - spatialOffset;
@@ -388,8 +391,7 @@ LogicalResult ONNXConvTransposeOpShapeHelper::computeShape() {
         dilationOpt.has_value() ? ArrayAttrIntVal(dilationOpt, i) : 1);
     // Kernel shape from attribute, default from Weight's spatial dims.
     if (kernelShapeOpt.has_value()) {
-      kernelShape.emplace_back(
-          LiteralIndexExpr(ArrayAttrIntVal(kernelShapeOpt, i)));
+      kernelShape.emplace_back(LitIE(ArrayAttrIntVal(kernelShapeOpt, i)));
     } else {
       int ii = i + spatialOffset;
       kernelShape.emplace_back(createIE->getShapeAsSymbol(wValue, ii));
@@ -402,15 +404,14 @@ LogicalResult ONNXConvTransposeOpShapeHelper::computeShape() {
   // Pads, at this stage a given compile-time literal or default 0.
   for (int i = 0; i < 2 * spatialRank; ++i) {
     int64_t p = padOpt.has_value() ? ArrayAttrIntVal(padOpt, i) : 0;
-    pads.emplace_back(LiteralIndexExpr(p));
+    pads.emplace_back(LitIE(p));
   }
 
   // Handle output size: start by inserting batch size and output channels.
   DimsExpr outputDims;
   outputDims.emplace_back(createIE->getShapeAsDim(xValue, 0));
-  outputDims.emplace_back(
-      createIE->getShapeAsDim(wValue, 1) *
-      LiteralIndexExpr(groupNum)); // CO may be different from CI.
+  outputDims.emplace_back(createIE->getShapeAsDim(wValue, 1) *
+                          LitIE(groupNum)); // CO may be different from CI.
 
   LiteralIndexExpr zeroIE(0);
   LiteralIndexExpr oneIE(1);
@@ -532,7 +533,7 @@ LogicalResult ONNXConvOp::verify() {
   }
   if (hasShapeAndRank(X)) {
     auto xShape = mlir::cast<ShapedType>(X.getType()).getShape();
-    if ((int64_t)xShape.size() - 2 != spatialRank)
+    if (static_cast<int64_t>(xShape.size()) - 2 != spatialRank)
       return emitOpError("Input and filter rank mismatch");
     if (xShape[1] != ShapedType::kDynamic && xShape[1] % g != 0)
       return emitOpError(
@@ -619,7 +620,7 @@ LogicalResult ONNXConvTransposeOp::verify() {
 
   if (hasShapeAndRank(X)) {
     auto xShape = mlir::cast<ShapedType>(X.getType()).getShape();
-    if ((int64_t)xShape.size() - 2 != spatialRank)
+    if (static_cast<int64_t>(xShape.size()) - 2 != spatialRank)
       return emitOpError("Input and filter rank mismatch");
     if (xShape[1] != ShapedType::kDynamic &&
         wShape[0] != ShapedType::kDynamic && xShape[1] != wShape[0]) {

@@ -48,6 +48,7 @@ add_onnx_mlir_library(OMONNXOps
   ONNXOps/Math/ElementwiseUnary.cpp
   ONNXOps/Math/Gemm.cpp
   ONNXOps/Math/HardMax.cpp
+  ONNXOps/Math/HammingWindow.cpp
   ONNXOps/Math/LRN.cpp
   ONNXOps/Math/MatMul.cpp
   ONNXOps/Math/RandomNormal.cpp
@@ -80,6 +81,7 @@ add_onnx_mlir_library(OMONNXOps
   ONNXOps/Tensor/Gather.cpp
   ONNXOps/Tensor/GatherElements.cpp
   ONNXOps/Tensor/GatherND.cpp
+  ONNXOps/Tensor/GridSample.cpp
   ONNXOps/Tensor/Identity.cpp
   ONNXOps/Tensor/NonZero.cpp
   ONNXOps/Tensor/OneHot.cpp

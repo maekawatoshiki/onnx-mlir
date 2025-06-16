@@ -4,7 +4,7 @@
 
 //===------------------ GatherND.cpp - ONNX Operations --------------------===//
 //
-// Copyright 2019-2023 The IBM Research Authors.
+// Copyright 2019-2024 The IBM Research Authors.
 //
 // =============================================================================
 //
@@ -73,7 +73,7 @@ LogicalResult ONNXGatherNDOpShapeHelper::computeShape() {
     for (int64_t i = b + indicesLastDim; i < dataRank; ++i)
       outputDims.emplace_back(dataDims[i]);
 
-  assert((int64_t)outputDims.size() == outputRank &&
+  assert(static_cast<int64_t>(outputDims.size()) == outputRank &&
          "Incorrect shape computation");
 
   setOutputDims(outputDims);
@@ -144,6 +144,10 @@ LogicalResult ONNXGatherNDOp::verify() {
   // All values in 'indices' are expected to satisfy the inequality:
   //   -data.shape[b + i] <= indices[...,i] <= (data.shape[b + i]-1)].
   if (ElementsAttr valueAttribute = getElementAttributeFromONNXValue(indices)) {
+    if (isElementAttrUninitializedDenseResource(valueAttribute)) {
+      return success(); // Return success to allow the parsing of MLIR with
+                        // elided attributes
+    }
     int flatIndex = 0;
     for (IntegerAttr value : valueAttribute.getValues<IntegerAttr>()) {
       int64_t indexValue = value.getInt();

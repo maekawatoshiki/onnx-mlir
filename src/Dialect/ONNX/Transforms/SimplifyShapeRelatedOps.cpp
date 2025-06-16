@@ -79,7 +79,7 @@ void getDimsInt64(Value val, SmallVectorImpl<int64_t> &result) {
   SmallVector<Value, 4> dims;
   getDims(val, dims);
   for (Value v : dims) {
-    if (auto constOp = dyn_cast<ONNXConstantOp>(v.getDefiningOp())) {
+    if (auto constOp = mlir::dyn_cast<ONNXConstantOp>(v.getDefiningOp())) {
       auto valueAttr = mlir::cast<ElementsAttr>(constOp.getValueAttr());
       int64_t dim = valueAttr.getSplatValue<int64_t>();
       result.emplace_back(dim);
@@ -508,7 +508,7 @@ void SimplifyShapeRelatedOpsPass::topDownShapeSimplification(
   config.useTopDownTraversal = true;
 
   // Simplify shape-related ops.
-  if (failed(applyPatternsAndFoldGreedily(moduleOp, std::move(patterns))))
+  if (failed(applyPatternsGreedily(moduleOp, std::move(patterns))))
     signalPassFailure();
 }
 

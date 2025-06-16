@@ -4,7 +4,7 @@
 
 //===------ KrnlToLLVMHelper.cpp ------------------------------------------===//
 //
-// Copyright 2022 The IBM Research Authors.
+// Copyright 2022-2024 The IBM Research Authors.
 //
 // =============================================================================
 //
@@ -24,6 +24,7 @@
 
 #include "onnx-mlir/Compiler/OMCompilerRuntimeTypes.h"
 #include "src/Conversion/KrnlToLLVM/KrnlToLLVMHelper.hpp"
+#include "src/Dialect/Krnl/DialectBuilder.hpp"
 #include "src/Dialect/Krnl/KrnlOps.hpp"
 #include "src/Dialect/Mlir/DialectBuilder.hpp"
 #include "src/Dialect/ONNX/ONNXOps/OpHelper.hpp"
@@ -142,7 +143,7 @@ void fillOMTensorWithMemRef(Value &outMemRef, Type elemTy, Value &outOMTensor,
   MultiDialectBuilder<LLVMBuilder> create(rewriter, loc);
 
   // Set ownership, i.e., free after OMTensor is destroyed.
-  Value owning = create.llvm.constant(int64Ty, (int64_t)outOwning);
+  Value owning = create.llvm.constant(int64Ty, static_cast<int64_t>(outOwning));
 
   // Extract the allocated pointer.
   Value outMemRefAllocatedPtr =
@@ -174,15 +175,16 @@ void fillOMTensorWithMemRef(Value &outMemRef, Type elemTy, Value &outOMTensor,
   for (decltype(rank) i = 0; i < rank; i++) {
     // Transfer size of dimension from memref to dynamic memref.
     Value dimSize = create.llvm.extractValue(int64Ty, outMemRef, {3, i});
-    Value dimSizePtr = create.llvm.getElemPtr(getPointerType(context, int64Ty),
-        int64Ty, sizesArrayPtr, ArrayRef<LLVM::GEPArg>{(int32_t)i});
+    Value dimSizePtr =
+        create.llvm.getElemPtr(getPointerType(context, int64Ty), int64Ty,
+            sizesArrayPtr, ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(i)});
     create.llvm.store(dimSize, dimSizePtr);
 
     // Transfer stride of dimension from memref to dynamic memref.
     Value dimStride = create.llvm.extractValue(int64Ty, outMemRef, {4, i});
     Value dimStridePtr =
         create.llvm.getElemPtr(getPointerType(context, int64Ty), int64Ty,
-            stridesArrayPtr, ArrayRef<LLVM::GEPArg>{(int32_t)i});
+            stridesArrayPtr, ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(i)});
     create.llvm.store(dimStride, dimStridePtr);
   }
 }
@@ -253,14 +255,14 @@ FlatSymbolRefAttr getOrInsertStrncmp(OpBuilder &builder, ModuleOp module) {
 std::string a2e_s(std::string a_s) {
   std::string r(a_s);
   for (unsigned int i = 0; i < r.size(); i++)
-    r[i] = a2e[(int)r[i]];
+    r[i] = a2e[static_cast<int>(r[i])];
   return r;
 }
 
 std::string e2a_s(std::string e_s) {
   std::string r(e_s);
   for (unsigned int i = 0; i < r.size(); i++)
-    r[i] = e2a[(int)r[i]];
+    r[i] = e2a[static_cast<int>(r[i])];
   return r;
 }
 
@@ -274,7 +276,7 @@ void emitErrNo(ModuleOp module, OpBuilder &builder, Location loc, int errCode) {
       module, StringRef("__errno_location"), int32PtrTy, {});
   Value errNoPos =
       createLLVM.call(int32PtrTy, errnoSymbolRef, ArrayRef<Value>({}));
-  Value errNoVal = createLLVM.constant(int32Ty, (int64_t)errCode);
+  Value errNoVal = createLLVM.constant(int32Ty, static_cast<int64_t>(errCode));
   createLLVM.store(errNoVal, errNoPos);
 }
 
@@ -339,6 +341,48 @@ bool isZOS(ModuleOp module) {
     zOS =
         llvm::Triple(mlir::cast<StringAttr>(mtripleAttr).getValue()).isOSzOS();
   return zOS;
+}
+
+void equalOrFailed(ModuleOp &module, OpBuilder &rewriter, Location loc,
+    Value lhs, Value rhs, std::string errorMsg, bool appendRHS) {
+  MLIRContext *context = rewriter.getContext();
+  MultiDialectBuilder<LLVMBuilder, KrnlBuilder> create(rewriter, loc);
+  create.llvm.ifThenElse(/*cond=*/
+      [&](const LLVMBuilder &createLLVM) {
+        return createLLVM.icmp(LLVM::ICmpPredicate::ne, lhs, rhs);
+      }, /*then=*/
+      [&](const LLVMBuilder &createLLVM) {
+        MultiDialectBuilder<LLVMBuilder, KrnlBuilder> create(createLLVM);
+        // Print an error message.
+        if (!errorMsg.empty()) {
+          if (appendRHS)
+            create.krnl.printf(
+                StringRef(errorMsg), rhs, rewriter.getI64Type(), true);
+          else
+            create.krnl.printf(StringRef(errorMsg + "\n"));
+        }
+        // Set errno.
+        emitErrNo(module, rewriter, loc, EINVAL);
+        // Return NULL.
+        create.llvm._return(create.llvm.null(getI8PointerType(context)));
+      });
+}
+
+void equalOrReturn(ModuleOp &module, OpBuilder &rewriter, Location loc,
+    Value lhs, Value rhs, Value retVal, std::string errorMsg) {
+  MultiDialectBuilder<LLVMBuilder, KrnlBuilder> create(rewriter, loc);
+  create.llvm.ifThenElse(/*cond=*/
+      [&](const LLVMBuilder &createLLVM) {
+        return createLLVM.icmp(LLVM::ICmpPredicate::ne, lhs, rhs);
+      }, /*then=*/
+      [&](const LLVMBuilder &createLLVM) {
+        MultiDialectBuilder<LLVMBuilder, KrnlBuilder> create(createLLVM);
+        // Print an error message.
+        if (!errorMsg.empty())
+          create.krnl.printf(StringRef(errorMsg + "\n"));
+        // Return retVal.
+        create.llvm._return(retVal);
+      });
 }
 
 } // namespace krnl

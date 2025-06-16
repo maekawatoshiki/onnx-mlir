@@ -58,7 +58,7 @@ extern bool OMStatusMessagesEnabled;
 // Misc Macros
 // -----------------------------------------------------------------------------
 
-#define CEIL(a, b) (uint64_t)((a + b - 1) / b) // positive numbers only
+#define CEIL(a, b) (uint64_t)(((a) + (b)-1) / (b)) // positive numbers only
 
 // -----------------------------------------------------------------------------
 // Common structures
@@ -135,7 +135,7 @@ void zDNNExtensionInit();
 // Helper Functions
 // -----------------------------------------------------------------------------
 
-inline void omUnreachable() {
+static inline void omUnreachable() {
 // Uses compiler specific extensions if possible.
 // Even if no extension is used, undefined behavior is still raised by
 // an empty function body and the noreturn attribute.
@@ -159,7 +159,7 @@ inline void omUnreachable() {
  */
 void checkStatus(zdnn_status status, const char *zdnn_name);
 
-#define CHECK_ZDNN_STATUS(status, zdnn_name) checkStatus(status, zdnn_name)
+#define CHECK_ZDNN_STATUS(status, zdnn_name) checkStatus((status), (zdnn_name))
 
 /**
  * \brief Get the unmapped shape (4D) of ztensor.
@@ -328,6 +328,23 @@ zdnn_status zdnn_sigmoid_ext(const zdnn_ztensor *input, zdnn_ztensor *output);
 zdnn_status zdnn_softmax_ext(const zdnn_ztensor *input, void *save_area,
     zdnn_softmax_act act_func, zdnn_ztensor *output);
 zdnn_status zdnn_tanh_ext(const zdnn_ztensor *input, zdnn_ztensor *output);
+
+// -----------------------------------------------------------------------------
+// Extension Functions for arch15
+// arch15 specific zdnn functions but with the `_ext` postfix.
+// -----------------------------------------------------------------------------
+
+zdnn_status zdnn_gelu_ext(const zdnn_ztensor *input, zdnn_ztensor *output);
+zdnn_status zdnn_invsqrt_ext(
+    const zdnn_ztensor *input, float epsilon, zdnn_ztensor *output);
+zdnn_status zdnn_leaky_relu_ext(const zdnn_ztensor *input,
+    const void *clipping_value, float adjustment_factor, zdnn_ztensor *output);
+zdnn_status zdnn_sqrt_ext(const zdnn_ztensor *input, zdnn_ztensor *output);
+zdnn_status zdnn_matmul_transpose_op_ext(const zdnn_ztensor *inputA,
+    const zdnn_ztensor *inputB, const zdnn_ztensor *inputC, int transpose_a,
+    int transpose_b, int opType, zdnn_ztensor *output);
+zdnn_status zdnn_reduce_ext(const zdnn_ztensor *input, void *save_area,
+    int op_type, zdnn_ztensor *output);
 
 // -----------------------------------------------------------------------------
 // Misc Utility Functions
